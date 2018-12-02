@@ -50,6 +50,10 @@ class OrientatedItemFactory implements LoggerAwareInterface
      * @param int                 $widthLeft
      * @param int                 $lengthLeft
      * @param int                 $depthLeft
+     * @param int                 $x
+     * @param int                 $y
+     * @param int                 $z
+     * @param PackedItemList      $prevPackedItemList
      *
      * @return OrientatedItem|null
      */
@@ -60,16 +64,20 @@ class OrientatedItemFactory implements LoggerAwareInterface
         bool $isLastItem,
         int $widthLeft,
         int $lengthLeft,
-        int $depthLeft
+        int $depthLeft,
+        int $x,
+        int $y,
+        int $z,
+        PackedItemList $prevPackedItemList
     ): ?OrientatedItem {
-        $possibleOrientations = $this->getPossibleOrientations($item, $prevItem, $widthLeft, $lengthLeft, $depthLeft);
+        $possibleOrientations = $this->getPossibleOrientations($item, $prevItem, $widthLeft, $lengthLeft, $depthLeft, $x, $y, $z, $prevPackedItemList);
         $usableOrientations = $this->getUsableOrientations($item, $possibleOrientations, $isLastItem);
 
         if (empty($usableOrientations)) {
             return null;
         }
 
-        usort($usableOrientations, function (OrientatedItem $a, OrientatedItem $b) use ($widthLeft, $lengthLeft, $depthLeft, $nextItems) {
+        usort($usableOrientations, function (OrientatedItem $a, OrientatedItem $b) use ($widthLeft, $lengthLeft, $depthLeft, $nextItems, $x, $y, $z, $prevPackedItemList) {
             $orientationAWidthLeft = $widthLeft - $a->getWidth();
             $orientationALengthLeft = $lengthLeft - $a->getLength();
             $orientationADepthLeft = $depthLeft - $a->getDepth();
@@ -89,8 +97,8 @@ class OrientatedItemFactory implements LoggerAwareInterface
 
             // prefer leaving room for next item in current row
             if ($nextItems->count()) {
-                $nextItemFitA = count($this->getPossibleOrientations($nextItems->top(), $a, $orientationAWidthLeft, $lengthLeft, $depthLeft));
-                $nextItemFitB = count($this->getPossibleOrientations($nextItems->top(), $b, $orientationBWidthLeft, $lengthLeft, $depthLeft));
+                $nextItemFitA = count($this->getPossibleOrientations($nextItems->top(), $a, $orientationAWidthLeft, $lengthLeft, $depthLeft, $x, $y, $z, $prevPackedItemList));
+                $nextItemFitB = count($this->getPossibleOrientations($nextItems->top(), $b, $orientationBWidthLeft, $lengthLeft, $depthLeft, $x, $y, $z, $prevPackedItemList));
                 if ($nextItemFitA && !$nextItemFitB) {
                     return -1;
                 }
@@ -99,8 +107,8 @@ class OrientatedItemFactory implements LoggerAwareInterface
                 }
 
                 // if not an easy either/or, do a partial lookahead
-                $additionalPackedA = $this->calculateAdditionalItemsPackedWithThisOrientation($a, $nextItems, $widthLeft, $lengthLeft, $depthLeft);
-                $additionalPackedB = $this->calculateAdditionalItemsPackedWithThisOrientation($b, $nextItems, $widthLeft, $lengthLeft, $depthLeft);
+                $additionalPackedA = $this->calculateAdditionalItemsPackedWithThisOrientation($a, $nextItems, $widthLeft, $lengthLeft, $depthLeft, $x, $y, $z, $prevPackedItemList);
+                $additionalPackedB = $this->calculateAdditionalItemsPackedWithThisOrientation($b, $nextItems, $widthLeft, $lengthLeft, $depthLeft, $x, $y, $z, $prevPackedItemList);
                 if ($additionalPackedA !== $additionalPackedB) {
                     return $additionalPackedB <=> $additionalPackedA;
                 }
@@ -123,6 +131,10 @@ class OrientatedItemFactory implements LoggerAwareInterface
      * @param int                 $widthLeft
      * @param int                 $lengthLeft
      * @param int                 $depthLeft
+     * @param int                 $x
+     * @param int                 $y
+     * @param int                 $z
+     * @param PackedItemList      $prevPackedItemList
      *
      * @return OrientatedItem[]
      */
@@ -131,7 +143,11 @@ class OrientatedItemFactory implements LoggerAwareInterface
         ?OrientatedItem $prevItem,
         int $widthLeft,
         int $lengthLeft,
-        int $depthLeft
+        int $depthLeft,
+        int $x,
+        int $y,
+        int $z,
+        PackedItemList $prevPackedItemList
     ): array {
         $orientations = [];
 
@@ -153,9 +169,21 @@ class OrientatedItemFactory implements LoggerAwareInterface
         }
 
         //remove any that simply don't fit
-        return array_filter($orientations, function (OrientatedItem $i) use ($widthLeft, $lengthLeft, $depthLeft) {
+        $orientations = array_filter($orientations, function (OrientatedItem $i) use ($widthLeft, $lengthLeft, $depthLeft) {
             return $i->getWidth() <= $widthLeft && $i->getLength() <= $lengthLeft && $i->getDepth() <= $depthLeft;
         });
+
+        if ($item instanceof PositionallyConstrainedItem) {
+            $box = $this->box;
+            $orientations = array_filter($orientations, function (OrientatedItem $i) use ($box, $x, $y, $z, $prevPackedItemList) {
+                /** @var PositionallyConstrainedItem $constrainedItem */
+                $constrainedItem = $i->getItem();
+
+                return $constrainedItem->canBePacked($box, $prevPackedItemList, $x, $y, $z, $i->getWidth(), $i->getLength(), $i->getDepth());
+            });
+        }
+
+        return $orientations;
     }
 
     /**
@@ -186,7 +214,11 @@ class OrientatedItemFactory implements LoggerAwareInterface
                 null,
                 $this->box->getInnerWidth(),
                 $this->box->getInnerLength(),
-                $this->box->getInnerDepth()
+                $this->box->getInnerDepth(),
+                0,
+                0,
+                0,
+                new PackedItemList()
             );
             static::$emptyBoxCache[$cacheKey] = $orientations;
         }
@@ -282,6 +314,9 @@ class OrientatedItemFactory implements LoggerAwareInterface
      * @param  int            $originalWidthLeft
      * @param  int            $originalLengthLeft
      * @param  int            $depthLeft
+     * @param  int            $x
+     * @param  int            $y
+     * @param  int            $z
      * @return int
      */
     protected function calculateAdditionalItemsPackedWithThisOrientation(
@@ -289,7 +324,11 @@ class OrientatedItemFactory implements LoggerAwareInterface
         ItemList $nextItems,
         int $originalWidthLeft,
         int $originalLengthLeft,
-        int $depthLeft
+        int $depthLeft,
+        int $x,
+        int $y,
+        int $z,
+        PackedItemList $prevPackedItemList
     ): int {
         $packedCount = 0;
 
@@ -300,7 +339,7 @@ class OrientatedItemFactory implements LoggerAwareInterface
         $lengthLeft = $originalLengthLeft;
         while (count($currentRowWorkingSetItems) > 0 && $widthLeft > 0) {
             $itemToPack = $currentRowWorkingSetItems->extract();
-            $orientatedItem = $this->getBestOrientation($itemToPack, $prevItem, $currentRowWorkingSetItems, !count($currentRowWorkingSetItems), $widthLeft, $lengthLeft, $depthLeft);
+            $orientatedItem = $this->getBestOrientation($itemToPack, $prevItem, $currentRowWorkingSetItems, !count($currentRowWorkingSetItems), $widthLeft, $lengthLeft, $depthLeft, $x, $y, $z, $prevPackedItemList);
             if ($orientatedItem instanceof OrientatedItem) {
                 ++$packedCount;
                 $widthLeft -= $orientatedItem->getWidth();
@@ -315,7 +354,7 @@ class OrientatedItemFactory implements LoggerAwareInterface
         $lengthLeft = $originalLengthLeft - $prevItem->getLength();
         while (count($nextRowWorkingSetItems) > 0 && $widthLeft > 0) {
             $itemToPack = $nextRowWorkingSetItems->extract();
-            $orientatedItem = $this->getBestOrientation($itemToPack, $prevItem, $nextRowWorkingSetItems, !count($nextRowWorkingSetItems), $widthLeft, $lengthLeft, $depthLeft);
+            $orientatedItem = $this->getBestOrientation($itemToPack, $prevItem, $nextRowWorkingSetItems, !count($nextRowWorkingSetItems), $widthLeft, $lengthLeft, $depthLeft, $x, $y, $z, $prevPackedItemList);
             if ($orientatedItem instanceof OrientatedItem) {
                 ++$packedCount;
                 $widthLeft -= $orientatedItem->getWidth();

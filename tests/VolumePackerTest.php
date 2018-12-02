@@ -11,6 +11,7 @@ namespace DVDoug\BoxPacker;
 use DVDoug\BoxPacker\Test\TestBox;
 use DVDoug\BoxPacker\Test\TestConstrainedTestItem;
 use DVDoug\BoxPacker\Test\TestItem;
+use DVDoug\BoxPacker\Test\TestPositionallyConstrainedTestItem;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -66,7 +67,7 @@ class VolumePackerTest extends TestCase
     /**
      * Test that constraint handling works correctly.
      */
-    public function testConstraints(): void
+    public function testLegacyConstraints(): void
     {
         // first a regular item
         $packer = new Packer();
@@ -82,6 +83,30 @@ class VolumePackerTest extends TestCase
         $packer = new Packer();
         $packer->addBox(new TestBox('Box', 10, 10, 10, 0, 10, 10, 10, 0));
         $packer->addItem(new TestConstrainedTestItem('Item', 1, 1, 1, 0, false), 8);
+        $packedBoxes = $packer->pack();
+
+        self::assertCount(4, $packedBoxes);
+    }
+
+    /**
+     * Test that constraint handling works correctly.
+     */
+    public function testConstraints(): void
+    {
+        // first a regular item
+        $packer = new Packer();
+        $packer->addBox(new TestBox('Box', 10, 10, 10, 0, 10, 10, 10, 0));
+        $packer->addItem(new TestItem('Item', 1, 1, 1, 0, false), 8);
+        $packedBoxes = $packer->pack();
+
+        self::assertCount(1, $packedBoxes);
+
+        // same dimensions but now constrained by type
+        TestPositionallyConstrainedTestItem::$limit = 2;
+
+        $packer = new Packer();
+        $packer->addBox(new TestBox('Box', 10, 10, 10, 0, 10, 10, 10, 0));
+        $packer->addItem(new TestPositionallyConstrainedTestItem('Item', 1, 1, 1, 0, false), 8);
         $packedBoxes = $packer->pack();
 
         self::assertCount(4, $packedBoxes);
