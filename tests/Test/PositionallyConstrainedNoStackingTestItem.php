@@ -15,13 +15,8 @@ use function count;
 use DVDoug\BoxPacker\PositionallyConstrainedItem;
 use function iterator_to_array;
 
-class TestPositionallyConstrainedTestItem extends TestItem implements PositionallyConstrainedItem
+class PositionallyConstrainedNoStackingTestItem extends TestItem implements PositionallyConstrainedItem
 {
-    /**
-     * @var int
-     */
-    public static $limit = 3;
-
     /**
      * Hook for user implementation of item-specific constraints, e.g. max <x> batteries per box.
      *
@@ -52,6 +47,16 @@ class TestPositionallyConstrainedTestItem extends TestItem implements Positional
             }
         );
 
-        return count($alreadyPackedType) + 1 <= static::$limit;
+        /** @var PackedItem $alreadyPacked */
+        foreach ($alreadyPackedType as $alreadyPacked) {
+            if (
+                $alreadyPacked->getZ() + $alreadyPacked->getDepth() === $proposedZ &&
+                $proposedX >= $alreadyPacked->getX() && $proposedX <= ($alreadyPacked->getX() + $alreadyPacked->getWidth()) &&
+                $proposedY >= $alreadyPacked->getY() && $proposedY <= ($alreadyPacked->getY() + $alreadyPacked->getLength())) {
+                return false;
+            }
+        }
+
+        return true;
     }
 }
