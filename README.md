@@ -1,6 +1,7 @@
 BoxPacker
 =========
 
+打包计算器
 An implementation of the "4D" bin packing/knapsack problem i.e. given a list of items, how many boxes do you need to fit
 them all in taking into account physical dimensions and weights.
 
